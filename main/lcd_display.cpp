@@ -1,4 +1,5 @@
 #include "lcd_display.h"
+#include "wifi_creds.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -221,7 +222,7 @@ static void render_screen(void) {
 
     // 2. Header Bar
     fb_fill_rect(0, 0, LCD_H_RES, 24, COLOR_HEADER_BG);
-    fb_draw_string(6, 4, "SmartOn PC", COLOR_TEXT, COLOR_HEADER_BG, 1);
+    fb_draw_string(6, 4, "SmartOnOff PC", COLOR_TEXT, COLOR_HEADER_BG, 1);
     fb_fill_rect(0, 24, LCD_H_RES, 1, COLOR_BORDER);
 
     // Header Right Badge: WiFi / Matter Status
@@ -254,7 +255,7 @@ static void render_screen(void) {
     }
 
     char status_str[32];
-    snprintf(status_str, sizeof(status_str), "PC%c %s", s_colon_visible ? ':' : ' ', state_text);
+    snprintf(status_str, sizeof(status_str), "%s%c %s", PC_HOSTNAME,s_colon_visible ? ':' : ' ', state_text);
 
     // Draw PC State Card Container
     fb_fill_rect(6, card_y, LCD_H_RES - 12, card_h, card_bg);
