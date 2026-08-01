@@ -57,8 +57,10 @@ static lcd_pc_status_t s_pc_status = PC_STATUS_OFF;
 static char s_message_line[64] = "Initializing...";
 
 static bool s_backlight_on = true;
+static bool s_manual_off = false;
 static TickType_t s_off_start_tick = 0;
 static bool s_colon_visible = true;
+
 
 // 8x16 Basic ASCII Font Data (Characters 32..126)
 static const uint8_t font8x16[95][16] = {
@@ -214,11 +216,24 @@ static void fb_draw_string(int x, int y, const char *str, uint16_t color, uint16
     }
 }
 
+static void set_display_power_state(bool enable) {
+    if (s_backlight_on == enable) return;
+    s_backlight_on = enable;
+    gpio_set_level((gpio_num_t)LCD_PIN_BL, enable ? 1 : 0);
+    if (s_panel_handle) {
+        esp_lcd_panel_disp_on_off(s_panel_handle, enable);
+    }
+    ESP_LOGI(TAG, "LCD Power state -> %s (Backlight & ST7789 Display %s)",
+             enable ? "ON" : "OFF", enable ? "Active" : "Sleep");
+}
+
 static void render_screen(void) {
     if (!s_fb || !s_panel_handle) return;
+    if (!s_backlight_on) return; // Skip rendering & SPI DMA transfers when display is off
 
     // 1. Fill Background
     fb_fill_screen(COLOR_BG);
+
 
     // 2. Header Bar
     fb_fill_rect(0, 0, LCD_H_RES, 24, COLOR_HEADER_BG);
@@ -416,18 +431,17 @@ void lcd_display_update_pc(lcd_pc_status_t status) {
         } else if (s_backlight_on) {
             TickType_t elapsed_ticks = xTaskGetTickCount() - s_off_start_tick;
             if (pdTICKS_TO_MS(elapsed_ticks) >= LCD_BACKLIGHT_OFF_TIMEOUT_MS) {
-                s_backlight_on = false;
-                gpio_set_level((gpio_num_t)LCD_PIN_BL, 0);
-                ESP_LOGI(TAG, "PC OFF for 5 minutes: LCD backlight turned OFF (Brightness 0)");
+                set_display_power_state(false);
             }
         }
     } else {
         // PC is ON or BOOTING
         s_off_start_tick = 0;
-        if (!s_backlight_on) {
-            s_backlight_on = true;
-            gpio_set_level((gpio_num_t)LCD_PIN_BL, 1);
-            ESP_LOGI(TAG, "PC state changed (%d): LCD backlight turned ON", status);
+        if (status_changed) {
+            s_manual_off = false;
+        }
+        if (!s_backlight_on && !s_manual_off) {
+            set_display_power_state(true);
         }
     }
 
@@ -446,10 +460,27 @@ void lcd_display_set_message(const char *msg) {
 void lcd_display_set_backlight(bool enable) {
     if (!s_lcd_mutex) return;
     xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+    s_manual_off = !enable;
     if (s_backlight_on != enable) {
-        s_backlight_on = enable;
-        gpio_set_level((gpio_num_t)LCD_PIN_BL, enable ? 1 : 0);
-        ESP_LOGI(TAG, "LCD Backlight %s", enable ? "ON" : "OFF (Brightness 0)");
+        set_display_power_state(enable);
+        if (enable) {
+            render_screen();
+        }
     }
     xSemaphoreGive(s_lcd_mutex);
 }
+
+bool lcd_display_toggle_backlight(void) {
+    if (!s_lcd_mutex) return false;
+    xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+    bool new_state = !s_backlight_on;
+    s_manual_off = !new_state;
+    set_display_power_state(new_state);
+    if (new_state) {
+        render_screen();
+    }
+    xSemaphoreGive(s_lcd_mutex);
+    return new_state;
+}
+
+

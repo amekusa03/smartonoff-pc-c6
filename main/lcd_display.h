@@ -44,6 +44,12 @@ void lcd_display_set_message(const char *msg);
  */
 void lcd_display_set_backlight(bool enable);
 
+/**
+ * @brief Toggle the LCD backlight state.
+ * @return True if backlight is now enabled, false otherwise.
+ */
+bool lcd_display_toggle_backlight(void);
+
 #ifdef __cplusplus
 }
 #endif

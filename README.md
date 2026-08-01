@@ -13,7 +13,7 @@ Google Home / Nest Hub / Apple Home 等の標準スマートホームエコシ�
 - **USB 通信状態ベースの PC 監視**: 2秒周期で USB Serial/JTAG 接続状態（`usb_serial_jtag_is_connected()`）を監視し、PC の実態（ON / OFF）を判定。
 - **Matter 属性自動同期 & フェイルセーフ**: PC の実態と Matter 属性値の乖離を検出した際、誤操作防止の安全ガード（`s_syncing_attribute`）付きで Matter 属性を自動更新・自動同期。
 - **ST7789 カラー LCD リアルタイム表示**: Wi-Fi 接続状態、割り当て IP アドレス、PC 状態（ON / OFF / BOOTING）、動作ステータスログをグラフィカルに表示。
-- **省電力＆画面保護（5分自動消灯）**: PC が `OFF` になってから 5 分経過すると LCD バックライト（輝度）を自動で `0`（消灯）に移行。PC が起動・復帰すると即座に自動点灯。
+- **省電力＆画面保護（5分自動消灯・手動トグル）**: PC が `OFF` になってから 5 分経過すると LCD バックライト（輝度）を自動で `0`（消灯）に移行。PC 起動・復帰で自動点灯。また本体 BOOT ボタン（GPIO 9）短押しでいつでも手動 ON/OFF 切替が可能。
 - **Google Home 互換性最適化**:
   - Wi-Fi 省電力モード無効化（`WIFI_PS_NONE`）による IPv6 mDNS（`_matter._tcp`）ドロップ防止。
   - MAC アドレスベースの決定論的 UniqueID（`chip-config/unique-id`）自動生成。
@@ -26,7 +26,8 @@ Google Home / Nest Hub / Apple Home 等の標準スマートホームエコシ�
 - **ディスプレイ**: 1.14 インチ ST7789 カラー LCD (240 × 135)
 - **接続方式**: USB Type-A 接続（PC の USB ポート）
 - **物理配線**: なし（USB 給電および接続検知）
-- **リセットボタン**: GPIO 9 (BOOT ボタン長押し 3 秒で Factory Reset)
+- **物理ボタン**: GPIO 9 (BOOT ボタン短押しで画面 ON/OFF / 長押し 3 秒で Factory Reset)
+
 
 ---
 

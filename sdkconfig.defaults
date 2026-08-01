@@ -31,3 +31,8 @@ CONFIG_MBEDTLS_HKDF_C=y
 
 # Increase LwIP IPv6 address number to 6 (MAX_FABRIC + 1)
 CONFIG_LWIP_IPV6_NUM_ADDRESSES=6
+
+# Power Management (Eco / Power Saving Mode)
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+

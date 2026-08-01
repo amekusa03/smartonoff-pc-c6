@@ -46,17 +46,18 @@ static void on_state_mismatch(bool actual_on)
     s_syncing_attribute = false;
 }
 
-#define GPIO_FACTORY_RESET    GPIO_NUM_9
+#define GPIO_BOOT_BUTTON      GPIO_NUM_9
+#define SHORT_PRESS_MIN_MS    50
 #define FACTORY_RESET_HOLD_MS 3000
 
 // Matter起動時のZCL初期化(NVS保存値→デフォルト値への変更)でコールバックが呼ばれ、
 // PCの電源ボタンが誤押下されるのを防ぐ。WiFi接続・monitor起動完了後にtrueになる。
 static volatile bool s_system_ready = false;
 
-static void factory_reset_task(void *)
+static void button_task(void *)
 {
     gpio_config_t cfg = {
-        .pin_bit_mask = (1ULL << GPIO_FACTORY_RESET),
+        .pin_bit_mask = (1ULL << GPIO_BOOT_BUTTON),
         .mode         = GPIO_MODE_INPUT,
         .pull_up_en   = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -65,19 +66,64 @@ static void factory_reset_task(void *)
     gpio_config(&cfg);
 
     while (true) {
-        if (gpio_get_level(GPIO_FACTORY_RESET) == 0) {
-            int held = 0;
-            while (gpio_get_level(GPIO_FACTORY_RESET) == 0 && held < FACTORY_RESET_HOLD_MS) {
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-                held += 100;
+        if (gpio_get_level(GPIO_BOOT_BUTTON) == 0) {
+            int held_ms = 0;
+            while (gpio_get_level(GPIO_BOOT_BUTTON) == 0) {
+                vTaskDelay(pdMS_TO_TICKS(50));
+                held_ms += 50;
+                if (held_ms >= FACTORY_RESET_HOLD_MS) {
+                    break;
+                }
             }
-            if (held >= FACTORY_RESET_HOLD_MS) {
-                ESP_LOGI(TAG, "Factory reset triggered");
+
+            if (held_ms >= FACTORY_RESET_HOLD_MS) {
+                ESP_LOGI(TAG, "Factory reset triggered (held >= %d ms)", FACTORY_RESET_HOLD_MS);
                 lcd_display_set_message("Factory Reset!");
                 esp_matter::factory_reset();
+            } else if (held_ms >= SHORT_PRESS_MIN_MS) {
+                bool on = lcd_display_toggle_backlight();
+                ESP_LOGI(TAG, "BOOT button short press: toggled display backlight -> %s", on ? "ON" : "OFF");
+                while (gpio_get_level(GPIO_BOOT_BUTTON) == 0) {
+                    vTaskDelay(pdMS_TO_TICKS(20));
+                }
             }
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+
+#include <esp_pm.h>
+
+static void app_power_management_init(void)
+{
+#if CONFIG_PM_ENABLE
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 160,
+        .min_freq_mhz = 40,
+        .light_sleep_enable = true
+    };
+    esp_err_t err = esp_pm_configure(&pm_config);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Power Management initialized: Dynamic Frequency Scaling (40-160MHz) & Auto Light Sleep enabled");
+    } else {
+        ESP_LOGE(TAG, "Failed to configure Power Management: %d", err);
+    }
+#else
+    ESP_LOGW(TAG, "CONFIG_PM_ENABLE is disabled, Power Management skipped");
+#endif
+}
+
+extern "C" void app_update_wifi_power_save(bool pc_on)
+{
+    wifi_ps_type_t ps_mode = pc_on ? WIFI_PS_NONE : WIFI_PS_MIN_MODEM;
+    esp_err_t err = esp_wifi_set_ps(ps_mode);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Wi-Fi Power Save mode set to %s (PC state: %s)",
+                 pc_on ? "WIFI_PS_NONE" : "WIFI_PS_MIN_MODEM",
+                 pc_on ? "ON" : "OFF");
+    } else {
+        ESP_LOGW(TAG, "Failed to set Wi-Fi Power Save mode: %d", err);
     }
 }
 
@@ -85,9 +131,8 @@ static void app_event_cb(const ChipDeviceEvent *event, intptr_t arg)
 {
     switch (event->Type) {
     case chip::DeviceLayer::DeviceEventType::kInterfaceIpAddressChanged: {
-        // Disable Wi-Fi power save mode (modem sleep) to prevent packet loss / mDNS timeout in Google Home
-        esp_wifi_set_ps(WIFI_PS_NONE);
-        ESP_LOGI(TAG, "Disabled Wi-Fi power save (WIFI_PS_NONE)");
+        bool initial_pc_on = (pc_get_power_state() == PC_STATE_ON);
+        app_update_wifi_power_save(initial_pc_on);
 
         esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
         if (netif) {
@@ -230,6 +275,7 @@ static void connect_wifi_station(void)
 extern "C" void app_main()
 {
     nvs_flash_init();
+    app_power_management_init(); // Enable Dynamic Frequency Scaling & Auto Light Sleep
     ensure_unique_id();   // Google Home が必須とする UniqueID を NVS に確保
     shutdown_client_init();   // 軽量シャットダウンクライアントの初期化
     lcd_display_init();
@@ -267,6 +313,7 @@ extern "C" void app_main()
 
     pc_monitor_init(on_state_mismatch);
 
-    xTaskCreate(factory_reset_task, "factory_reset", 4096, nullptr, 1, nullptr);
+    xTaskCreate(button_task, "button_task", 4096, nullptr, 1, nullptr);
 }
+
 

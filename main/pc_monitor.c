@@ -37,12 +37,23 @@ void pc_monitor_notify_command(bool want_on)
     }
 }
 
+extern void app_update_wifi_power_save(bool pc_on);
+
 static void monitor_task(void *arg)
 {
+    static pc_power_state_t s_last_state = PC_STATE_TRANSITIONING;
+
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
 
         pc_power_state_t state = pc_get_power_state();
+
+        if (state != s_last_state) {
+            s_last_state = state;
+            if (state == PC_STATE_ON || state == PC_STATE_OFF) {
+                app_update_wifi_power_save(state == PC_STATE_ON);
+            }
+        }
 
         if (state == PC_STATE_ON) {
             lcd_display_update_pc(PC_STATUS_ON);
